@@ -1,4 +1,4 @@
-﻿using NAudio.CoreAudioApi;
+﻿using AudioDeviceUtil;
 
 using System;
 using System.Collections.Generic;
@@ -14,24 +14,11 @@ namespace Headphone_tracker
     class Program
     {
         static WebSocketServer wss;
+        static AudioDeviceManager audioDeviceSwitcher = new AudioDeviceManager();
         static void Main(string[] args)
         {
-            var enumerator = new MMDeviceEnumerator();
-
-            // Allows you to enumerate rendering devices in certain states
-            var endpoints = enumerator.EnumerateAudioEndPoints(
-                DataFlow.Render,
-                DeviceState.Unplugged | DeviceState.Active);
-            foreach (var endpoint in endpoints)
-            {
-                Console.WriteLine("{0} - {1}", endpoint.DeviceFriendlyName, endpoint.State);
-            }
-
-            // Aswell as hook to the actual event
-            var nc = new NotificationClient();
-            nc.DeviceConnected += Nc_DeviceConnected;
-            nc.DeviceRemoved += Nc_DeviceRemoved;
-            enumerator.RegisterEndpointNotificationCallback(nc);
+            audioDeviceSwitcher.RegisterForNotification = true;
+            audioDeviceSwitcher.AudioDeviceEvent += AudioDeviceSwitcher_AudioDeviceEvent;
             wss = new WebSocketServer(IPAddress.Parse("127.0.0.1"), 5000);
             wss.AddWebSocketService<WebSocketListener>("/Headset");
             wss.Start();
@@ -39,16 +26,28 @@ namespace Headphone_tracker
             Console.ReadKey(true);
         }
 
-        private static void Nc_DeviceRemoved(object sender, string e)
+        private static void AudioDeviceSwitcher_AudioDeviceEvent(object sender, AudioDeviceNotificationEventArgs e)
         {
-            wss.WebSocketServices.Broadcast("Device removed: " + e);
-            Console.WriteLine("Device removed notification sent!");
+            switch (e.State)
+            {
+                case AudioDeviceStateType.Active:
+                    wss.WebSocketServices.Broadcast("Device connected: " + e.DeviceId);
+                    Console.WriteLine("Device connected notification sent!");
+                    break;
+                case AudioDeviceStateType.Disabled:
+                    break;
+                case AudioDeviceStateType.NotPresent:
+                    break;
+                case AudioDeviceStateType.Unplugged:
+                    wss.WebSocketServices.Broadcast("Device removed: " + e.DeviceId);
+                    Console.WriteLine("Device removed notification sent!");
+                    break;
+                case AudioDeviceStateType.StateMaskAll:
+                    break;
+                default:
+                    break;
+            }
         }
 
-        private static void Nc_DeviceConnected(object sender, string e)
-        {
-            wss.WebSocketServices.Broadcast("Device connected: " + e);
-            Console.WriteLine("Device connected notification sent!");
-        }
     }
 }
